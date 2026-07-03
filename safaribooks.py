@@ -246,7 +246,9 @@ class SafariBooks:
     KINDLE_HTML = "#sbo-rt-content *{{word-wrap:break-word!important;" \
                   "word-break:break-word!important;}}#sbo-rt-content table,#sbo-rt-content pre" \
                   "{{overflow-x:unset!important;overflow:unset!important;" \
-                  "overflow-y:unset!important;white-space:pre-wrap!important;}}"
+                  "overflow-y:unset!important;white-space:pre-wrap!important;}}" \
+                  "#sbo-rt-content caption,#sbo-rt-content caption *{{word-wrap:normal!important;" \
+                  "word-break:normal!important;}}"
 
     BASE_02_HTML = "</style>" \
                    "</head>\n" \
@@ -376,7 +378,7 @@ class SafariBooks:
         self.images = []
 
         self.display.info("Downloading book contents... (%s chapters)" % len(self.book_chapters), state=True)
-        self.BASE_HTML = self.BASE_01_HTML + (self.KINDLE_HTML if not args.kindle else "") + self.BASE_02_HTML
+        self.BASE_HTML = self.BASE_01_HTML + (self.KINDLE_HTML if args.kindle else "") + self.BASE_02_HTML
 
         self.cover = False
         self.get()

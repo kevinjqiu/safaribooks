@@ -79,6 +79,20 @@ options:
   
 The script now authenticates only via `cookies.json`. Export cookies from a browser session that can open the full book, then rerun the downloader.  
 For **SSO**, use `retrieve_cookies.py` to create `cookies.json` from your current browser session, or save the cookies there manually (please follow [`these steps`](/../../issues/150#issuecomment-555423085)).  
+
+#### Cookie Bookmarklet
+Open an authenticated O'Reilly page in your browser, create a bookmark, and set its URL to this bookmarklet:
+
+```text
+javascript:(function(){var a={"_vwo_uuid_v2":true,"csrftoken":true,"_abck":true,"orm-jwt":true,"orm-rt":true,"bm_so":true,"bm_sz":true,"bm_lso":true,"bm_s":true,"bm_ss":true,"akaalb_LearningALB":true};function b(){var h={},i=document.cookie?document.cookie.split(/;\s*/):[];for(var j=0;j<i.length;j+=1){var k=i[j],l=k.indexOf("=");if(l===-1)continue;var m=decodeURIComponent(k.slice(0,l));if(!a[m])continue;h[m]=decodeURIComponent(k.slice(l+1));}return h}function c(h){window.prompt("Copy this JSON into cookies.json",h)}if(!/(^|\.)oreilly\.com$/.test(window.location.hostname)){window.alert("Open this bookmarklet on learning.oreilly.com or oreilly.com after logging in.");return}var d=b(),e=JSON.stringify(d,null,2),f=!d["orm-jwt"],g=f?"Copied cookies JSON, but orm-jwt was not visible in document.cookie. If this does not work, use retrieve_cookies.py instead.":"Copied cookies JSON to the clipboard.";if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(e).then(function(){window.alert(g);}).catch(function(){c(e);});return}c(e);}());
+```
+
+It will:
+  * copy the cookies JSON to your clipboard when possible
+  * keep only the cookie names this downloader needs
+  * fall back to a prompt for manual copy if clipboard access fails
+
+If the bookmarklet cannot see `orm-jwt`, use `retrieve_cookies.py` instead. The readable source is in `oreilly_cookies_bookmarklet.js`.
   
 Pay attention if you use a shared PC, because everyone that has access to your files can steal your session. 
 
