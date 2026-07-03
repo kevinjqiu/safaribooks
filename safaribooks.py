@@ -24,7 +24,6 @@ COOKIES_FILE = os.path.join(PATH, "cookies.json")
 ORLY_BASE_HOST = "oreilly.com"  # PLEASE INSERT URL HERE
 
 SAFARI_BASE_HOST = "learning." + ORLY_BASE_HOST
-API_ORIGIN_HOST = "api." + ORLY_BASE_HOST
 
 ORLY_BASE_URL = "https://www." + ORLY_BASE_HOST
 SAFARI_BASE_URL = "https://" + SAFARI_BASE_HOST
@@ -224,7 +223,6 @@ class WinQueue(list):  # TODO: error while use `process` in Windows: can't pickl
 
 
 class SafariBooks:
-    API_TEMPLATE = SAFARI_BASE_URL + "/api/v1/book/{0}/"
     API_V2_TEMPLATE = SAFARI_BASE_URL + "/api/v2/epubs/urn:orm:book:{0}/"
     API_V2_CHAPTERS_TEMPLATE = SAFARI_BASE_URL + "/api/v2/epub-chapters/?epub_identifier=urn:orm:book:{0}"
     API_V2_FILES_TEMPLATE = SAFARI_BASE_URL + "/api/v2/epubs/urn:orm:book:{0}/files/"
@@ -324,8 +322,6 @@ class SafariBooks:
 
         self.session.headers.update(self.HEADERS)
 
-        self.api_version = 1
-
         if not os.path.isfile(COOKIES_FILE):
             self.display.exit("Login: unable to find `cookies.json` file.\n"
                               "    Please export your browser session cookies into that file and try again.")
@@ -333,7 +329,6 @@ class SafariBooks:
         self.session.cookies.update(json.load(open(COOKIES_FILE)))
 
         self.book_id = args.bookid
-        self.api_url = self.API_TEMPLATE.format(self.book_id)
         self.api_v2_url = self.API_V2_TEMPLATE.format(self.book_id)
         self.api_v2_files_url = self.API_V2_FILES_TEMPLATE.format(self.book_id)
         self.api_v2_chapters_url = self.API_V2_CHAPTERS_TEMPLATE.format(self.book_id)
@@ -491,46 +486,13 @@ class SafariBooks:
         self.display.info("Successfully authenticated.", state=True)
 
     def get_book_info(self):
-        response = self.requests_provider(self.api_url)
-        if response == 0:
-            self.display.exit("API: unable to retrieve book info.")
-
-        response = self.parse_json_response(response)
-        if response is None:
-            response = self.get_book_info_v2()
-            if response:
-                self.api_version = 2
-                self.display.log("API v1 book info failed; using API v2 metadata instead.")
-                return response
-
-            self.display.exit("API: unable to retrieve book info.")
-
-        if not isinstance(response, dict) or len(response.keys()) == 1:
-            fallback = self.get_book_info_v2()
-            if fallback:
-                self.api_version = 2
-                self.display.log("API v1 book info was unavailable; using API v2 metadata instead.")
-                return fallback
-
-            self.display.exit(self.display.api_error(response))
-
-        if "last_chapter_read" in response:
-            del response["last_chapter_read"]
-
-        for key, value in response.items():
-            if value is None:
-                response[key] = 'n/a'
-
-        return response
-
-    def get_book_info_v2(self):
         response = self.requests_provider(self.api_v2_url)
         if response == 0:
-            return False
+            self.display.exit("API: unable to retrieve book info.")
 
         response = self.parse_json_response(response)
         if not isinstance(response, dict):
-            return False
+            self.display.exit("API: unable to retrieve book info.")
 
         metadata = self.get_book_package_metadata_v2()
 
@@ -573,51 +535,10 @@ class SafariBooks:
             "rights": rights
         }
 
-    def get_book_chapters(self, page=1):
-        if self.api_version == 2:
-            return self.get_book_chapters_v2()
-
-        response = self.requests_provider(urljoin(self.api_url, "chapter/?page=%s" % page))
-        if response == 0:
-            self.display.exit("API: unable to retrieve book chapters.")
-
-        response = self.parse_json_response(response)
-        if response is None:
-            fallback = self.get_book_chapters_v2()
-            if fallback:
-                self.api_version = 2
-                self.display.log("API v1 chapter listing failed; using API v2 chapters instead.")
-                return fallback
-
-            self.display.exit("API: unable to retrieve book chapters.")
-
-        if not isinstance(response, dict) or len(response.keys()) == 1:
-            fallback = self.get_book_chapters_v2()
-            if fallback:
-                self.api_version = 2
-                self.display.log("API v1 chapter listing was unavailable; using API v2 chapters instead.")
-                return fallback
-
-            self.display.exit(self.display.api_error(response))
-
-        if "results" not in response or not len(response["results"]):
-            self.display.exit("API: unable to retrieve book chapters.")
-
-        if response["count"] > sys.getrecursionlimit():
-            sys.setrecursionlimit(response["count"])
-
-        result = []
-        result.extend([c for c in response["results"] if "cover" in c["filename"] or "cover" in c["title"]])
-        for c in result:
-            del response["results"][response["results"].index(c)]
-
-        result += response["results"]
-        return result + (self.get_book_chapters(page + 1) if response["next"] else [])
-
-    def get_book_chapters_v2(self):
+    def get_book_chapters(self):
         response = self.get_paginated_results(self.api_v2_chapters_url)
         if response is False or not len(response):
-            return False
+            self.display.exit("API: unable to retrieve book chapters.")
 
         response.sort(key=lambda chapter: chapter.get("indexed_position", 0))
         return [{
@@ -652,7 +573,7 @@ class SafariBooks:
                 (self.filename, self.chapter_title, url)
             )
 
-        if self.api_version == 2 and self.is_preview_only_content(response.text):
+        if self.is_preview_only_content(response.text):
             self.display.exit(
                 "Authentication issue: O'Reilly returned preview-only chapter content for `%s`.\n"
                 "    The current `cookies.json` is not enough to access the full reader.\n"
@@ -892,18 +813,10 @@ class SafariBooks:
             self.filename = next_chapter["filename"]
             self.chapter_expected_total_size = next_chapter.get("expected_total_size", 0)
 
-            asset_base_url = next_chapter['asset_base_url']
-            api_v2_detected = False
-            if 'v2' in next_chapter['content']:
-                asset_base_url = SAFARI_BASE_URL + "/api/v2/epubs/urn:orm:book:{}/files".format(self.book_id)
-                api_v2_detected = True
-
             if "images" in next_chapter and len(next_chapter["images"]):
                 for img_url in next_chapter['images']:
                     if self.url_is_absolute(img_url):
                         self.images.append(img_url)
-                    elif api_v2_detected:
-                        self.images.append(asset_base_url + '/' + img_url)
                     else:
                         self.images.append(urljoin(next_chapter['asset_base_url'], img_url))
 
@@ -1105,34 +1018,6 @@ class SafariBooks:
         }
 
     def create_toc(self):
-        if self.api_version == 2:
-            return self.create_toc_v2()
-
-        response = self.requests_provider(urljoin(self.api_url, "toc/"))
-        if response == 0:
-            self.display.exit("API: unable to retrieve book chapters. "
-                              "Don't delete any files, just run again this program"
-                              " in order to complete the `.epub` creation!")
-
-        response = self.parse_json_response(response)
-
-        if not isinstance(response, list):
-            self.display.exit(
-                self.display.api_error(response) +
-                " Don't delete any files, just run again this program"
-                " in order to complete the `.epub` creation!"
-            )
-
-        navmap, _, max_depth = self.parse_toc(response)
-        return self.TOC_NCX.format(
-            (self.book_info["isbn"] if self.book_info["isbn"] else self.book_id),
-            max_depth,
-            self.book_title,
-            ", ".join(aut.get("name", "") for aut in self.book_info.get("authors", [])),
-            navmap
-        )
-
-    def create_toc_v2(self):
         response = self.requests_provider(self.api_v2_toc_url)
         if response == 0:
             self.display.exit("API: unable to retrieve book chapters. "
