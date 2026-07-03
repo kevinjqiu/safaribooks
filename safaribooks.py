@@ -14,6 +14,7 @@ import traceback
 from html import escape
 from random import random
 from lxml import html, etree
+from xml.etree import ElementTree
 from multiprocessing import Process, Queue, Value
 from urllib.parse import urljoin, urlparse, parse_qs, quote_plus
 
@@ -233,6 +234,7 @@ class SafariBooks:
     API_V2_CHAPTERS_TEMPLATE = SAFARI_BASE_URL + "/api/v2/epub-chapters/?epub_identifier=urn:orm:book:{0}"
     API_V2_FILES_TEMPLATE = SAFARI_BASE_URL + "/api/v2/epubs/urn:orm:book:{0}/files/"
     API_V2_TOC_TEMPLATE = SAFARI_BASE_URL + "/api/v2/epubs/urn:orm:book:{0}/table-of-contents/"
+    API_V2_OPF_TEMPLATE = SAFARI_BASE_URL + "/api/v2/epubs/urn:orm:book:{0}/files/content.opf"
 
     BASE_01_HTML = "<!DOCTYPE html>\n" \
                    "<html lang=\"en\" xml:lang=\"en\" xmlns=\"http://www.w3.org/1999/xhtml\"" \
@@ -347,6 +349,7 @@ class SafariBooks:
         self.api_v2_files_url = self.API_V2_FILES_TEMPLATE.format(self.book_id)
         self.api_v2_chapters_url = self.API_V2_CHAPTERS_TEMPLATE.format(self.book_id)
         self.api_v2_toc_url = self.API_V2_TOC_TEMPLATE.format(self.book_id)
+        self.api_v2_opf_url = self.API_V2_OPF_TEMPLATE.format(self.book_id)
 
         self.check_login()
 
@@ -380,6 +383,7 @@ class SafariBooks:
 
         self.chapter_title = ""
         self.filename = ""
+        self.chapter_expected_total_size = 0
         self.chapter_stylesheets = []
         self.css = []
         self.images = []
@@ -391,17 +395,18 @@ class SafariBooks:
         self.get()
         if not self.cover:
             self.cover = self.get_default_cover() if "cover" in self.book_info else False
-            cover_html = self.parse_html(
-                html.fromstring("<div id=\"sbo-rt-content\"><img src=\"Images/{0}\"></div>".format(self.cover)), True
-            )
+            if self.cover:
+                cover_html = self.parse_html(
+                    html.fromstring("<div id=\"sbo-rt-content\"><img src=\"Images/{0}\"></div>".format(self.cover)), True
+                )
 
-            self.book_chapters = [{
-                "filename": "default_cover.xhtml",
-                "title": "Cover"
-            }] + self.book_chapters
+                self.book_chapters = [{
+                    "filename": "default_cover.xhtml",
+                    "title": "Cover"
+                }] + self.book_chapters
 
-            self.filename = self.book_chapters[0]["filename"]
-            self.save_page_html(cover_html)
+                self.filename = self.book_chapters[0]["filename"]
+                self.save_page_html(cover_html)
 
         self.css_done_queue = Queue(0) if "win" not in sys.platform else WinQueue()
         self.display.info("Downloading book CSSs... (%s files)" % len(self.css), state=True)
@@ -607,16 +612,45 @@ class SafariBooks:
         if not isinstance(response, dict):
             return False
 
+        metadata = self.get_book_package_metadata_v2()
+
         return {
             "title": response.get("title", ""),
-            "authors": [],
+            "authors": metadata.get("authors", []),
             "identifier": response.get("identifier", self.book_id),
             "isbn": response.get("isbn", ""),
-            "publishers": [],
-            "rights": "",
+            "publishers": metadata.get("publishers", []),
+            "rights": metadata.get("rights", ""),
             "description": response.get("descriptions", {}).get("text/html", ""),
             "issued": response.get("publication_date", ""),
             "web_url": self.api_v2_files_url
+        }
+
+    def get_book_package_metadata_v2(self):
+        response = self.requests_provider(self.api_v2_opf_url)
+        if response == 0 or response.status_code != 200:
+            return {}
+
+        try:
+            root = ElementTree.fromstring(response.text)
+        except ElementTree.ParseError:
+            return {}
+
+        ns = {
+            "opf": "http://www.idpf.org/2007/opf",
+            "dc": "http://purl.org/dc/elements/1.1/"
+        }
+        metadata = root.find("opf:metadata", ns)
+        if metadata is None:
+            return {}
+
+        creators = [creator.text for creator in metadata.findall("dc:creator", ns) if creator.text]
+        publishers = [publisher.text for publisher in metadata.findall("dc:publisher", ns) if publisher.text]
+        rights = next((rights.text for rights in metadata.findall("dc:rights", ns) if rights.text), "")
+        return {
+            "authors": [{"name": creator} for creator in creators],
+            "publishers": [{"name": publisher} for publisher in publishers],
+            "rights": rights
         }
 
     def get_book_chapters(self, page=1):
@@ -671,6 +705,7 @@ class SafariBooks:
             "title": chapter.get("title", ""),
             "content": chapter["content_url"],
             "asset_base_url": self.api_v2_files_url,
+            "expected_total_size": chapter.get("total_size", 0),
             "images": chapter.get("related_assets", {}).get("images", []),
             "stylesheets": [{"url": url} for url in chapter.get("related_assets", {}).get("stylesheets", [])],
             "site_styles": []
@@ -697,6 +732,14 @@ class SafariBooks:
                 (self.filename, self.chapter_title, url)
             )
 
+        if self.api_version == 2 and self.is_preview_only_content(response.text):
+            self.display.exit(
+                "Authentication issue: O'Reilly returned preview-only chapter content for `%s`.\n"
+                "    The current `cookies.json` is not enough to access the full reader.\n"
+                "    Refresh the cookies from a browser session that can open the full chapter, then try again." %
+                self.chapter_title
+            )
+
         root = None
         try:
             root = html.fromstring(response.text, base_url=SAFARI_BASE_URL)
@@ -709,6 +752,17 @@ class SafariBooks:
             )
 
         return root
+
+    def is_preview_only_content(self, text):
+        if "Unlock full access" in text or "Become an O'Reilly member" in text or "Become an O’Reilly member" in text:
+            return True
+
+        if not self.chapter_expected_total_size:
+            return False
+
+        stripped = text.rstrip()
+        looks_truncated = stripped.endswith("...</p></div></section></div>") or stripped.endswith("...</p></div></div>")
+        return looks_truncated and (len(text.encode("utf-8")) * 20 < self.chapter_expected_total_size)
 
     @staticmethod
     def url_is_absolute(url):
@@ -916,6 +970,7 @@ class SafariBooks:
             next_chapter = self.chapters_queue.pop(0)
             self.chapter_title = next_chapter["title"]
             self.filename = next_chapter["filename"]
+            self.chapter_expected_total_size = next_chapter.get("expected_total_size", 0)
 
             asset_base_url = next_chapter['asset_base_url']
             api_v2_detected = False
@@ -1041,6 +1096,7 @@ class SafariBooks:
     def create_content_opf(self):
         self.css = next(os.walk(self.css_path))[2]
         self.images = next(os.walk(self.images_path))[2]
+        cover_item_id = self.get_cover_item_id()
 
         manifest = []
         spine = []
@@ -1080,11 +1136,19 @@ class SafariBooks:
             ", ".join(escape(pub.get("name", "")) for pub in self.book_info.get("publishers", [])),
             escape(self.book_info.get("rights", "")),
             self.book_info.get("issued", ""),
-            self.cover,
+            cover_item_id,
             "\n".join(manifest),
             "\n".join(spine),
             self.book_chapters[0]["filename"].replace(".html", ".xhtml")
         )
+
+    def get_cover_item_id(self):
+        if not self.cover:
+            return ""
+
+        cover_name = os.path.basename(self.cover)
+        dot_split = cover_name.split(".")
+        return "img_" + escape("".join(dot_split[:-1]))
 
     @staticmethod
     def parse_toc(l, c=0, mx=0):
