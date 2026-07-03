@@ -43,12 +43,12 @@ requests>=2.20.0
 ```
   
 ## Usage:
-It's really simple to use, just choose a book from the library and replace in the following command:
-  * X-es with its ID, 
-  * `email:password` with your own. 
+It's really simple to use:
+  * export your authenticated browser cookies into `cookies.json`
+  * choose a book from the library and replace X-es with its ID
 
 ```shell
-$ python3 safaribooks.py --cred "account_mail@mail.com:password01" XXXXXXXXXXXXX
+$ python3 safaribooks.py XXXXXXXXXXXXX
 ```
 
 The ID is the digits that you find in the URL of the book description page:  
@@ -58,9 +58,7 @@ Like: `https://www.safaribooksonline.com/library/view/test-driven-development-wi
 #### Program options:
 ```shell
 $ python3 safaribooks.py --help
-usage: safaribooks.py [--cred <EMAIL:PASS> | --login] [--no-cookies]
-                      [--kindle] [--preserve-log] [--help]
-                      <BOOK ID>
+usage: safaribooks.py [--kindle] [--preserve-log] [--help] <BOOK ID>
 
 Download and generate an EPUB of your favorite books from Safari Books Online.
 
@@ -70,14 +68,7 @@ positional arguments:
                        `https://learning.oreilly.com/library/view/book-
                        name/XXXXXXXXXXXXX/`
 
-optional arguments:
-  --cred <EMAIL:PASS>  Credentials used to perform the auth login on Safari
-                       Books Online. Es. ` --cred
-                       "account_mail@mail.com:password01" `.
-  --login              Prompt for credentials used to perform the auth login
-                       on Safari Books Online.
-  --no-cookies         Prevent your session data to be saved into
-                       `cookies.json` file.
+options:
   --kindle             Add some CSS rules that block overflow on `table` and
                        `pre` elements. Use this option if you're going to
                        export the EPUB to E-Readers like Amazon Kindle.
@@ -86,12 +77,10 @@ optional arguments:
   --help               Show this help message.
 ```
   
-The first time you use the program, you'll have to specify your Safari Books Online account credentials (look [`here`](/../../issues/15) for special character).  
-The next times you'll download a book, before session expires, you can omit the credential, because the program save your session cookies in a file called `cookies.json`.  
-For **SSO**, please use the `sso_cookies.py` program in order to create the `cookies.json` file from the SSO cookies retrieved by your browser session (please follow [`these steps`](/../../issues/150#issuecomment-555423085)).  
+The script now authenticates only via `cookies.json`. Export cookies from a browser session that can open the full book, then rerun the downloader.  
+For **SSO**, use `retrieve_cookies.py` to create `cookies.json` from your current browser session, or save the cookies there manually (please follow [`these steps`](/../../issues/150#issuecomment-555423085)).  
   
 Pay attention if you use a shared PC, because everyone that has access to your files can steal your session. 
-If you don't want to cache the cookies, just use the `--no-cookies` option and provide all time your credential through the `--cred` option or the more safe `--login` one: this will prompt you for credential during the script execution.
 
 You can configure proxies by setting on your system the environment variable `HTTPS_PROXY` or using the `USE_PROXY` directive into the script.
 
@@ -111,7 +100,7 @@ In this case, I suggest you to convert the `EPUB` to `AZW3` with Calibre or to `
 ## Examples:
   * ## Download [Test-Driven Development with Python, 2nd Edition](https://www.safaribooksonline.com/library/view/test-driven-development-with/9781491958698/):  
     ```shell
-    $ python3 safaribooks.py --cred "my_email@gmail.com:MyPassword1!" 9781491958698
+    $ python3 safaribooks.py 9781491958698
 
            ____     ___         _ 
           / __/__ _/ _/__ _____(_)
@@ -122,7 +111,7 @@ In this case, I suggest you to convert the `EPUB` to `AZW3` with Calibre or to `
         /____/\___/\___/_/\_\/___/
 
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    [-] Logging into Safari Books Online...
+    [-] Successfully authenticated.
     [*] Retrieving book info... 
     [-] Title: Test-Driven Development with Python, 2nd Edition                     
     [-] Authors: Harry J.W. Percival                                                
