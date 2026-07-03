@@ -23,17 +23,13 @@ Before any usage please read the *O'Reilly*'s [Terms of Service](https://learnin
   * [Example: Use or not the `--kindle` option](#use-or-not-the---kindle-option)
 
 ## Requirements & Setup:
-First of all, it requires `python3` and `pip3` or `pipenv` to be installed.  
+First of all, it requires `python3` and `uv` to be installed.  
 ```shell
 $ git clone https://github.com/lorenzodifuccia/safaribooks.git
 Cloning into 'safaribooks'...
 
 $ cd safaribooks/
-$ pip3 install -r requirements.txt
-
-OR
-
-$ pipenv install && pipenv shell
+$ uv sync
 ```  
 
 The program depends of only two **Python _3_** modules:
@@ -48,7 +44,7 @@ It's really simple to use:
   * choose a book from the library and replace X-es with its ID
 
 ```shell
-$ python3 safaribooks.py XXXXXXXXXXXXX
+$ uv run safaribooks.py XXXXXXXXXXXXX
 ```
 
 The ID is the digits that you find in the URL of the book description page:  
@@ -57,7 +53,7 @@ Like: `https://www.safaribooksonline.com/library/view/test-driven-development-wi
   
 #### Program options:
 ```shell
-$ python3 safaribooks.py --help
+$ uv run safaribooks.py --help
 usage: safaribooks.py [--kindle] [--preserve-log] [--help] <BOOK ID>
 
 Download and generate an EPUB of your favorite books from Safari Books Online.
@@ -78,7 +74,7 @@ options:
 ```
   
 The script now authenticates only via `cookies.json`. Export cookies from a browser session that can open the full book, then rerun the downloader.  
-For **SSO**, use `retrieve_cookies.py` to create `cookies.json` from your current browser session, or save the cookies there manually (please follow [`these steps`](/../../issues/150#issuecomment-555423085)).  
+For **SSO**, use `uv run --with browser_cookie3 python retrieve_cookies.py` to create `cookies.json` from your current browser session, or save the cookies there manually (please follow [`these steps`](/../../issues/150#issuecomment-555423085)).  
 
 #### Cookie Bookmarklet
 Open an authenticated O'Reilly page in your browser, create a bookmark, and set its URL to this bookmarklet:
@@ -114,7 +110,7 @@ In this case, I suggest you to convert the `EPUB` to `AZW3` with Calibre or to `
 ## Examples:
   * ## Download [Test-Driven Development with Python, 2nd Edition](https://www.safaribooksonline.com/library/view/test-driven-development-with/9781491958698/):  
     ```shell
-    $ python3 safaribooks.py 9781491958698
+    $ uv run safaribooks.py 9781491958698
 
            ____     ___         _ 
           / __/__ _/ _/__ _____(_)
@@ -168,7 +164,7 @@ In this case, I suggest you to convert the `EPUB` to `AZW3` with Calibre or to `
  
   * ## Use or not the `--kindle` option:
     ```bash
-    $ python3 safaribooks.py --kindle 9781491958698
+    $ uv run safaribooks.py --kindle 9781491958698
     ```  
     On the right, the book created with `--kindle` option, on the left without (default):  
     
